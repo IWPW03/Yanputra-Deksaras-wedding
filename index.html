@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Inventory</title>
+    <link rel="stylesheet" href="../Css/Style.css">
+</head>
+<body>
+
+    <div class="app">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+            <div class="logo">
+                <img src="../Assets/logo.jpg" alt="Logo">
+                <h2>Inventory</h2>
+            </div>
+
+            <nav>
+                <a href="Index.html" class="active">Dashboard</a>
+                <a href="Penjualan.html">Penjualan</a>
+                <a href="Persediaan.html">Persediaan</a>
+            </nav>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="content">
+            <header>
+                <h1>Dashboard</h1>
+                <p>Ringkasan persediaan & transaksi</p>
+                <div class="filter-bar">
+  <select id="filterProduk">
+    <option value="">Semua Produk</option>
+  </select>
+
+  <select id="filterBulan">
+    <option value="">Semua Bulan</option>
+    <option value="1">Januari</option>
+    <option value="2">Februari</option>
+    <option value="3">Maret</option>
+    <option value="4">April</option>
+    <option value="5">Mei</option>
+    <option value="6">Juni</option>
+    <option value="7">Juli</option>
+    <option value="8">Agustus</option>
+    <option value="9">September</option>
+    <option value="10">Oktober</option>
+    <option value="11">November</option>
+    <option value="12">Desember</option>
+  </select>
+</div>
+            </header>
+
+            <section class="cards">
+              
+    <div class="card">
+        <h3>Total Produk</h3>
+        <span id="totalProduk">0</span>
+    </div>
+    <div class="card">
+        <h3>Total Stok</h3>
+        <span id="totalStok">0</span>
+    </div>
+    <div class="card">
+    <h3>Total Penjualan</h3>
+    <span id="totalPenjualan">0</span>
+</div>
+<div class="card">
+  <h3>Total Penjualan (Rp)</h3>
+  <span id="totalPenjualanRp">0</span>
+</div>
+</section>
+<section class="chart-box">
+  <h3>Grafik Penjualan per Bulan</h3>
+  <canvas id="penjualanChart" width="1000" height="320"></canvas>
+</section>
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+   <script>
+/* =======================
+   KONFIGURASI
+======================= */
+const API_URL = "https://script.google.com/macros/s/AKfycbwIqSQFXk6RxujXRxSRHmnPLe2Cas6x4awkZ29eDgayh-r5ylAhiIItUrRFTqGrHP6p/exec";
+
+/* =======================
+   ELEMENT
+======================= */
+const filterProduk = document.getElementById("filterProduk");
+const filterBulan  = document.getElementById("filterBulan");
+
+const totalProdukEl       = document.getElementById("totalProduk");
+const totalStokEl         = document.getElementById("totalStok");
+const totalPenjualanEl    = document.getElementById("totalPenjualan");
+const totalPenjualanRpEl  = document.getElementById("totalPenjualanRp");
+
+/* =======================
+   STATE (DIPISAH JELAS)
+======================= */
+let penjualanRaw   = [];   // data mentah (UNTUK GRAFIK)
+let persediaan     = [];
+let hargaMap       = {};   // { SKU: hargaJual }
+let chart          = null;
+
+/* =======================
+   FETCH DATA (1x SAJA)
+======================= */
+fetch(API_URL)
+  .then(res => res.json())
+  .then(data => {
+    penjualanRaw = (data.penjualan || []).slice(1);
+    persediaan   = (data.persediaan || []).slice(1);
+
+    // MASTER HARGA → MAP
+    const masterHarga = (data.masterHarga || []).slice(1);
+    masterHarga.forEach(r => {
+      const sku = r[0];
+      const hargaJual = Number(r[3]) || 0; // kolom Harga Jual
+      if (sku) hargaMap[sku] = hargaJual;
+    });
+
+    initFilterBulan();
+    isiDropdownProduk();
+
+    buildChartOnce(); // 🔒 GRAFIK GLOBAL (1x)
+    updateKPI();      // 🔄 KPI TERFILTER
+  })
+  .catch(err => console.error("API Error:", err));
+
+/* =======================
+   INIT FILTER
+======================= */
+function initFilterBulan() {
+  // default = bulan sekarang (UTC-safe)
+  filterBulan.value = new Date().getUTCMonth() + 1;
+}
+
+function isiDropdownProduk() {
+  const setProduk = new Set();
+  penjualanRaw.forEach(r => r[3] && setProduk.add(r[3]));
+
+  [...setProduk].sort().forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p;
+    opt.textContent = p;
+    filterProduk.appendChild(opt);
+  });
+}
+
+/* =======================
+   KPI (TERFILTER PRODUK & BULAN)
+======================= */
+function updateKPI() {
+  const produkDipilih = filterProduk.value;
+  const bulanDipilih  = filterBulan.value; // 1..12 atau ""
+
+  let totalQty = 0;
+  let totalRp  = 0;
+  const produkSet = new Set();
+
+  penjualanRaw.forEach(r => {
+    const bulanUTC = new Date(r[0]).getUTCMonth() + 1;
+
+    const produk = r[3];
+    const qty    = Number(r[4]) || 0;
+    const sku    = r[5]; // pastikan index SKU benar
+    const harga  = hargaMap[sku] || 0;
+
+    const okProduk = !produkDipilih || produk === produkDipilih;
+    const okBulan  = !bulanDipilih  || bulanUTC == bulanDipilih;
+
+    if (okProduk && okBulan) {
+      totalQty += qty;
+      totalRp  += qty * harga;
+      produkSet.add(produk);
+    }
+  });
+
+  let totalStok = 0;
+  persediaan.forEach(r => {
+    const produk = r[1];
+    const stok   = Number(r[5]) || 0;
+    if (!produkDipilih || produk === produkDipilih) {
+      totalStok += stok;
+    }
+  });
+
+  totalProdukEl.textContent      = produkSet.size || 0;
+  totalStokEl.textContent        = totalStok;
+  totalPenjualanEl.textContent   = totalQty;
+  totalPenjualanRpEl.textContent = "Rp " + totalRp.toLocaleString("id-ID");
+}
+
+/* =======================
+   GRAFIK (GLOBAL, TIDAK IKUT FILTER)
+   - RESPONSIVE DIMATIKAN
+   - UKURAN KUNCI
+======================= */
+function buildChartOnce() {
+  const monthly = Array(12).fill(0);
+
+  penjualanRaw.forEach(r => {
+    const idx = new Date(r[0]).getUTCMonth(); // 0..11
+    monthly[idx] += Number(r[4]) || 0;
+  });
+
+  const ctx = document.getElementById("penjualanChart");
+  if (!ctx) return;
+
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"],
+      datasets: [{
+        label: "Total Penjualan (Global)",
+        data: monthly,
+        borderWidth: 2,
+        tension: 0.3,
+        fill: false
+      }]
+    },
+    options: {
+      responsive: false,   // ⬅️ FINAL: STOP resize & gerak
+      animation: false,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+/* =======================
+   EVENT (HANYA KPI)
+======================= */
+filterProduk.addEventListener("change", updateKPI);
+filterBulan.addEventListener("change", updateKPI);
+
+/*
+RINGKASAN:
+- Grafik = GLOBAL (dibuat 1x, tidak ikut filter)
+- KPI    = TERFILTER (Produk & Bulan)
+- Harga  = MASTER_HARGA (via SKU)
+*/
+</script>
+</body>
+</html>
