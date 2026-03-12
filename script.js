@@ -5,18 +5,23 @@ AOS.init({
 
 const btn = document.getElementById("open");
 const cover = document.querySelector(".cover");
+const content = document.getElementById("content");
 const music = document.getElementById("music");
 
-if(btn){
   btn.onclick = function(){
     cover.style.display = "none";
+    content.style.display = "block";
+    document.body.style.overflow = "auto";
     music.play();
-  }
-  document.getElementById("content").scrollIntoView({
-behavior:"smooth"
-});
 
-}
+    window.scrollTo({
+    top:0,
+    behavior:"smooth"
+    });
+    
+ 
+
+};
 
 // ================= SAKURA ANIMATION =================
 
