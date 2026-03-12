@@ -53,6 +53,10 @@ border-radius:30px;
 cursor:pointer;
 }
 
+#content{
+display:none;
+}
+
 /* HERO */
 
 .hero{
