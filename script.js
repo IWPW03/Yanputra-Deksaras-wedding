@@ -12,6 +12,10 @@ if(btn){
     cover.style.display = "none";
     music.play();
   }
+  document.getElementById("content").scrollIntoView({
+behavior:"smooth"
+});
+
 }
 
 // ================= SAKURA ANIMATION =================
